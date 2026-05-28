@@ -5,6 +5,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Menu, X } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import {
+  getBrowserSessionUser,
+  getMetadataRole,
+  getUserRole,
+  isAdminRole,
+  waitForBrowserSessionUser,
+} from "@/lib/auth";
 
 export default function Navbar() {
   const router = useRouter();
@@ -16,51 +24,66 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    async function loadUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let active = true;
 
-      setLoggedIn(!!user);
+    async function syncAuth(userFromEvent?: User | null) {
+      try {
+        const user = userFromEvent ?? (await waitForBrowserSessionUser());
 
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
+        if (!active) return;
 
-        setIsAdmin(profile?.role === "admin");
+        setLoggedIn(!!user);
+
+        if (!user) {
+          setIsAdmin(false);
+          return;
+        }
+
+        try {
+          const role = await getUserRole(user);
+
+          if (!active) return;
+
+          setIsAdmin(isAdminRole(role));
+        } catch (error) {
+          console.error("Failed to load profile role", error);
+
+          if (!active) return;
+
+          setIsAdmin(isAdminRole(getMetadataRole(user)));
+        }
+      } catch (error) {
+        console.error("Failed to load auth session", error);
+
+        if (!active) return;
+
+        setLoggedIn(false);
+        setIsAdmin(false);
       }
     }
 
-    loadUser();
+    void syncAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setLoggedIn(!!session?.user);
-
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .single();
-
-        setIsAdmin(profile?.role === "admin");
-      } else {
-        setIsAdmin(false);
-      }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => {
+        void syncAuth(session?.user ?? null);
+      }, 0);
     });
 
     return () => {
+      active = false;
       subscription.unsubscribe();
     };
   }, []);
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+
+    if (error) {
+      console.error("Failed to sign out", error);
+    }
 
     setLoggedIn(false);
 
@@ -68,7 +91,8 @@ export default function Navbar() {
 
     setMobileMenuOpen(false);
 
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   }
 
   return (

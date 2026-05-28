@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { getBrowserSessionUser } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,16 +19,18 @@ export default function LoginPage() {
 
   useEffect(() => {
     async function checkUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const user = await getBrowserSessionUser();
 
-      if (user) {
-        router.push("/dashboard");
+        if (user) {
+          router.replace("/dashboard");
+        }
+      } catch (error) {
+        console.error("Failed to load auth session", error);
       }
     }
 
-    checkUser();
+    void checkUser();
   }, [router]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {

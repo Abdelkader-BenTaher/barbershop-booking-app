@@ -1,13 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 import { Toaster } from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Fade Studio",
   description: "Premium barber booking platform",
   manifest: "/manifest.json",
+};
+
+export const viewport: Viewport = {
   themeColor: "#000000",
 };
 

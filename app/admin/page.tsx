@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
+import Link from "next/link";
+import {
+  getBrowserSessionUser,
+  getUserRole,
+  isAdminRole,
+  waitForBrowserSessionUser,
+} from "@/lib/auth";
 
 type Appointment = {
   id: string;
@@ -16,6 +23,13 @@ type Appointment = {
   appointment_time: string;
 };
 
+type Notice = {
+  title: string;
+  body: string;
+  href: string;
+  cta: string;
+};
+
 export default function AdminPage() {
   const router = useRouter();
 
@@ -23,38 +37,51 @@ export default function AdminPage() {
 
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    checkAdmin();
-  }, []);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   async function checkAdmin() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const user = await waitForBrowserSessionUser();
 
-    // NOT LOGGED IN
-    if (!user) {
-      router.push("/login");
-      return;
+      if (!user) {
+        setNotice({
+          title: "Login required",
+          body: "Redirecting you to login before opening the admin area.",
+          href: "/login",
+          cta: "Go to login",
+        });
+        router.replace("/login");
+        return;
+      }
+
+      const role = await getUserRole(user);
+
+      if (!isAdminRole(role)) {
+        console.warn("Admin check failed", { userId: user.id, email: user.email, role });
+        toast.error("Access denied");
+        setNotice({
+          title: "Admin access required",
+          body: "Your account is signed in, but it is not marked as an admin for this site.",
+          href: "/dashboard",
+          cta: "Go to dashboard",
+        });
+        router.replace("/dashboard");
+        return;
+      }
+
+      await fetchAppointments();
+    } catch (error) {
+      console.error("Failed to load admin page", error);
+      toast.error("Failed to load admin dashboard");
+      setNotice({
+        title: "Admin dashboard unavailable",
+        body: "We could not verify your admin profile or load appointments. Please try again.",
+        href: "/dashboard",
+        cta: "Go to dashboard",
+      });
+    } finally {
+      setLoading(false);
     }
-
-    // CHECK ROLE
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    // NOT ADMIN
-    if (profile?.role !== "admin") {
-      toast.error("Access denied");
-
-      router.push("/dashboard");
-
-      return;
-    }
-
-    fetchAppointments();
   }
 
   async function fetchAppointments() {
@@ -66,19 +93,15 @@ export default function AdminPage() {
       });
 
     if (error) {
-      console.log(error);
-
-      toast.error("Failed to load appointments");
-
-      setLoading(false);
-
-      return;
+      throw error;
     }
 
     setAppointments(data || []);
-
-    setLoading(false);
   }
+
+  useEffect(() => {
+    void checkAdmin();
+  }, []);
 
   async function deleteAppointment(id: string) {
     const confirmed = confirm("Delete this appointment?");
@@ -94,13 +117,37 @@ export default function AdminPage() {
 
     toast.success("Appointment deleted");
 
-    fetchAppointments();
+    try {
+      await fetchAppointments();
+    } catch (error) {
+      console.error("Failed to refresh appointments", error);
+      toast.error("Failed to refresh appointments");
+    }
   }
 
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
         Loading...
+      </main>
+    );
+  }
+
+  if (notice) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+        <div className="max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center">
+          <h1 className="text-3xl font-bold">{notice.title}</h1>
+
+          <p className="text-zinc-400 mt-4">{notice.body}</p>
+
+          <Link
+            href={notice.href}
+            className="inline-block mt-8 bg-white text-black px-6 py-3 rounded-xl font-semibold"
+          >
+            {notice.cta}
+          </Link>
+        </div>
       </main>
     );
   }
@@ -116,12 +163,12 @@ export default function AdminPage() {
             <p className="text-zinc-400 mt-4">Manage all appointments.</p>
           </div>
 
-          <a
+          <Link
             href="/admin/barbers"
             className="bg-white text-black px-6 py-4 rounded-2xl font-bold hover:scale-[1.02] transition text-center"
           >
             Manage Barbers
-          </a>
+          </Link>
         </div>
 
         {/* EMPTY STATE */}

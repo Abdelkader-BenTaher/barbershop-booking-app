@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getBrowserSessionUser } from "@/lib/auth";
 
 const services = [
   {
@@ -24,14 +25,17 @@ export default function HomePage() {
 
   useEffect(() => {
     async function checkUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const user = await getBrowserSessionUser();
 
-      setLoggedIn(!!user);
+        setLoggedIn(!!user);
+      } catch (error) {
+        console.error("Failed to load auth session", error);
+        setLoggedIn(false);
+      }
     }
 
-    checkUser();
+    void checkUser();
 
     const {
       data: { subscription },

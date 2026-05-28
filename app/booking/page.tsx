@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
+import { fetchProfile, getBrowserSessionUser } from "@/lib/auth";
 
 const services = ["Classic Haircut", "Beard Trim", "Full Grooming"];
 
@@ -13,6 +15,18 @@ type Barber = {
   name: string;
   working_days: string[];
 };
+
+function normalizeBarber(barber: Record<string, unknown>): Barber {
+  return {
+    id: String(barber.id || ""),
+    name: String(barber.name || ""),
+    working_days: Array.isArray(barber.working_days)
+      ? barber.working_days.map((day) => String(day))
+      : typeof barber.working_days === "string"
+      ? [barber.working_days]
+      : [],
+  };
+}
 
 export default function BookingPage() {
   const [barbers, setBarbers] = useState<Barber[]>([]);
@@ -52,35 +66,34 @@ export default function BookingPage() {
       return;
     }
 
-    setBarbers(data || []);
+    const normalizedBarbers = (data || []).map(normalizeBarber);
+    setBarbers(normalizedBarbers);
 
-    if (data && data.length > 0) {
+    if (normalizedBarbers.length > 0) {
       setFormData((prev) => ({
         ...prev,
-        barber: data[0].name,
+        barber: normalizedBarbers[0].name,
       }));
     }
   }
 
   async function loadProfile() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const user = await getBrowserSessionUser();
 
-    if (!user) return;
+      if (!user) return;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+      const profile = await fetchProfile(user);
 
-    setFormData((prev) => ({
-      ...prev,
-      full_name: profile?.full_name || "",
-      phone: profile?.phone || "",
-      email: user.email || "",
-    }));
+      setFormData((prev) => ({
+        ...prev,
+        full_name: profile?.full_name || "",
+        phone: profile?.phone || "",
+        email: user.email || "",
+      }));
+    } catch (error) {
+      console.error("Failed to load profile", error);
+    }
   }
 
   function handleChange(
@@ -161,9 +174,13 @@ export default function BookingPage() {
 
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let user: User | null = null;
+
+    try {
+      user = await getBrowserSessionUser();
+    } catch (error) {
+      console.error("Failed to load auth session", error);
+    }
 
     const { data: existingAppointment } = await supabase
       .from("appointments")

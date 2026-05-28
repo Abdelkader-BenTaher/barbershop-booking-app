@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { getBrowserSessionUser, upsertProfile } from "@/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,16 +19,18 @@ export default function RegisterPage() {
 
   useEffect(() => {
     async function checkUser() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const user = await getBrowserSessionUser();
 
-      if (user) {
-        router.push("/dashboard");
+        if (user) {
+          router.replace("/dashboard");
+        }
+      } catch (error) {
+        console.error("Failed to load auth session", error);
       }
     }
 
-    checkUser();
+    void checkUser();
   }, [router]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -64,13 +67,15 @@ export default function RegisterPage() {
 
     // CREATE USER PROFILE
     if (data.user) {
-      await supabase.from("profiles").insert([
-        {
-          id: data.user.id,
+      try {
+        await upsertProfile(data.user, {
           full_name: "",
           phone: "",
-        },
-      ]);
+        });
+      } catch (error) {
+        console.error("Failed to create profile", error);
+        toast.error("Account created, but the profile was not saved");
+      }
     }
 
     setLoading(false);

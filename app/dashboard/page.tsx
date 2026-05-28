@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
+import Link from "next/link";
+import { fetchProfile, getBrowserSessionUser, upsertProfile } from "@/lib/auth";
 
 type Appointment = {
   id: string;
@@ -13,10 +15,19 @@ type Appointment = {
   appointment_time: string;
 };
 
+type Notice = {
+  title: string;
+  body: string;
+  href: string;
+  cta: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   const [saving, setSaving] = useState(false);
 
@@ -29,44 +40,60 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
   }, []);
 
   async function loadDashboard() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    setLoading(true);
+    setNotice(null);
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    try {
+      const user = await getBrowserSessionUser();
 
-    // LOAD PROFILE
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+      if (!user) {
+        setNotice({
+          title: "Login required",
+          body: "Redirecting you to login so you can view your dashboard.",
+          href: "/login",
+          cta: "Go to login",
+        });
+        router.replace("/login");
+        return;
+      }
 
-    setProfile({
-      full_name: profileData?.full_name || "",
-      phone: profileData?.phone || "",
-      email: user.email || "",
-    });
+      const profileData = await fetchProfile(user);
 
-    // LOAD APPOINTMENTS
-    const { data: appointmentsData } = await supabase
-      .from("appointments")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("appointment_date", {
-        ascending: true,
+      setProfile({
+        full_name: profileData?.full_name || "",
+        phone: profileData?.phone || "",
+        email: user.email || "",
       });
 
-    setAppointments(appointmentsData || []);
+      const { data: appointmentsData, error } = await supabase
+        .from("appointments")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("appointment_date", {
+          ascending: true,
+        });
 
-    setLoading(false);
+      if (error) {
+        throw error;
+      }
+
+      setAppointments(appointmentsData || []);
+    } catch (error) {
+      console.error("Failed to load dashboard", error);
+      toast.error("Failed to load dashboard");
+      setNotice({
+        title: "Dashboard unavailable",
+        body: "We could not load your profile or appointments. Please try again.",
+        href: "/booking",
+        cta: "Back to booking",
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -79,28 +106,32 @@ export default function DashboardPage() {
   async function saveProfile() {
     setSaving(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const user = await getBrowserSessionUser();
 
-    if (!user) return;
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+      const profileData = await upsertProfile(user, {
         full_name: profile.full_name,
         phone: profile.phone,
-      })
-      .eq("id", user.id);
+      });
 
-    setSaving(false);
+      setProfile({
+        full_name: profileData?.full_name || profile.full_name,
+        phone: profileData?.phone || profile.phone,
+        email: user.email || "",
+      });
 
-    if (error) {
+      toast.success("Profile updated");
+    } catch (error) {
+      console.error("Failed to save profile", error);
       toast.error("Failed to save profile");
-      return;
+    } finally {
+      setSaving(false);
     }
-
-    toast.success("Profile updated");
   }
 
   async function cancelAppointment(id: string) {
@@ -118,13 +149,32 @@ export default function DashboardPage() {
 
     toast.success("Appointment cancelled");
 
-    loadDashboard();
+    void loadDashboard();
   }
 
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
         Loading...
+      </main>
+    );
+  }
+
+  if (notice) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
+        <div className="max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center">
+          <h1 className="text-3xl font-bold">{notice.title}</h1>
+
+          <p className="text-zinc-400 mt-4">{notice.body}</p>
+
+          <Link
+            href={notice.href}
+            className="inline-block mt-8 bg-white text-black px-6 py-3 rounded-xl font-semibold"
+          >
+            {notice.cta}
+          </Link>
+        </div>
       </main>
     );
   }
