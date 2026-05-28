@@ -50,10 +50,16 @@ function parseDelimitedEnvValue(value: unknown): string[] {
 function isAdminOverride(user: User) {
   const email = String(user.email || "").toLowerCase();
   const id = String(user.id || "");
-  const adminEmails = parseDelimitedEnvValue(process.env.NEXT_PUBLIC_ADMIN_EMAILS);
-  const adminIds = parseDelimitedEnvValue(process.env.NEXT_PUBLIC_ADMIN_USER_IDS);
+  const adminEmails = parseDelimitedEnvValue(
+    process.env.NEXT_PUBLIC_ADMIN_EMAILS,
+  );
+  const adminIds = parseDelimitedEnvValue(
+    process.env.NEXT_PUBLIC_ADMIN_USER_IDS,
+  );
 
-  return (email && adminEmails.includes(email)) || (id && adminIds.includes(id));
+  return (
+    (email && adminEmails.includes(email)) || (id && adminIds.includes(id))
+  );
 }
 
 export function normalizeRole(role: unknown): string {
@@ -73,12 +79,18 @@ export function normalizeRole(role: unknown): string {
 }
 
 export function isAdminRole(role: unknown) {
-  return ["admin", "administrator", "owner", "super_admin", "superadmin"].includes(
-    normalizeRole(role),
-  );
+  return [
+    "admin",
+    "administrator",
+    "owner",
+    "super_admin",
+    "superadmin",
+  ].includes(normalizeRole(role));
 }
 
-function getRoleFromRecord(record: Record<string, unknown> | null | undefined): string {
+function getRoleFromRecord(
+  record: Record<string, unknown> | null | undefined,
+): string {
   if (!record) return "";
 
   function lookupValue(value: unknown): string {
@@ -207,7 +219,11 @@ export function getMetadataRole(user: User | null) {
   );
 }
 
-function timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+function timeoutPromise<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
   let timeoutId = 0;
 
   return Promise.race([
@@ -219,11 +235,10 @@ function timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, fallback: T):
 }
 
 export async function getBrowserSessionUser() {
-  const [{ data: sessionData, error: sessionError }, { data: userData, error: userError }] =
-    await Promise.all([
-      supabase.auth.getSession(),
-      supabase.auth.getUser(),
-    ]);
+  const [
+    { data: sessionData, error: sessionError },
+    { data: userData, error: userError },
+  ] = await Promise.all([supabase.auth.getSession(), supabase.auth.getUser()]);
 
   if (sessionError && userError) {
     throw sessionError || userError;
@@ -232,7 +247,9 @@ export async function getBrowserSessionUser() {
   return sessionData?.session?.user ?? userData?.user ?? null;
 }
 
-export async function waitForBrowserSessionUser(timeoutMs = 5000): Promise<User | null> {
+export async function waitForBrowserSessionUser(
+  timeoutMs = 5000,
+): Promise<User | null> {
   const user = await timeoutPromise(getBrowserSessionUser(), timeoutMs, null);
 
   if (user) {
@@ -273,8 +290,14 @@ export async function fetchProfile(user: User) {
 }
 
 export async function upsertProfile(user: User, profile: Profile) {
-  const existingProfile = await findProfileRow<Profile>(user, "full_name, phone");
-  const lookup = existingProfile?.lookup ?? { column: "id" as const, value: user.id };
+  const existingProfile = await findProfileRow<Profile>(
+    user,
+    "full_name, phone",
+  );
+  const lookup = existingProfile?.lookup ?? {
+    column: "id" as const,
+    value: user.id,
+  };
 
   const payload: Record<string, string | null> = {
     [lookup.column]: lookup.value,
@@ -309,10 +332,17 @@ export async function getUserRole(user: User) {
   const metadataRole = getMetadataRole(user);
 
   try {
-    const profileResult = await findProfileRow<Record<string, unknown>>(user, "*");
+    const profileResult = await findProfileRow<Record<string, unknown>>(
+      user,
+      "*",
+    );
     const profileRole = getRoleFromRecord(profileResult?.data);
 
-    if (isAdminRole(profileRole) || isAdminRole(metadataRole) || isAdminOverride(user)) {
+    if (
+      isAdminRole(profileRole) ||
+      isAdminRole(metadataRole) ||
+      isAdminOverride(user)
+    ) {
       return "admin";
     }
 
